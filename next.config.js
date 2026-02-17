@@ -1,14 +1,11 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  experimental: {
-    serverActions: true,
-  },
+  // Блок experimental удален, так как он больше не нужен
   images: {
     remotePatterns: [
       {
         protocol: 'https',
-        hostname: '*.supabase.co',
-        pathname: '/storage/v1/object/public/**',
+        hostname: '**.supabase.co',
       },
     ],
   },

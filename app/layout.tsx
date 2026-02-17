@@ -2,12 +2,14 @@ import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import './globals.css';
 
+// ИМПОРТИРУЕМ НАШ НОВЫЙ ХЕДЕР
+import { Header } from '@/components/layout/Header';
+
 const inter = Inter({ subsets: ['latin', 'cyrillic'] });
 
 export const metadata: Metadata = {
-  title: 'LocalBoard - Локальная доска объявлений',
-  description: 'Покупайте и продавайте товары и услуги в вашем городе',
-  viewport: 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0',
+  title: 'Local Board MVP',
+  description: 'Локальная доска объявлений',
 };
 
 export default function RootLayout({
@@ -18,10 +20,11 @@ export default function RootLayout({
   return (
     <html lang="ru">
       <body className={inter.className}>
-        {children}
+        {/* ВСТАВЛЯЕМ ХЕДЕР СЮДА */}
+        <Header />
         
+        {children}
       </body>
     </html>
   );
 }
-//sdasdasdasd

@@ -4,7 +4,7 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
+    --background: 210 40% 98%; /* Чуть теплее белого */
     --foreground: 222.2 84% 4.9%;
     --card: 0 0% 100%;
     --card-foreground: 222.2 84% 4.9%;
@@ -58,6 +58,28 @@
   }
 }
 
+@layer base {
+  :root {
+    --background: 210 40% 98%; /* Чуть теплее белого */
+    --foreground: 222.2 84% 4.9%;
+    --primary: 221.2 83.2% 53.3%;
+    --primary-foreground: 210 40% 98%;
+    --radius: 0.75rem;
+  }
+}
+
+@layer base {
+  body {
+    @apply bg-background text-foreground antialiased;
+    /* Тонкий фоновый паттерн для глубины */
+    background-image: 
+      radial-gradient(at 0% 0%, hsla(253,16%,7%,0) 0, transparent 50%), 
+      radial-gradient(at 50% 0%, hsla(225,39%,30%,0) 0, transparent 50%), 
+      radial-gradient(at 100% 0%, hsla(339,49%,30%,0) 0, transparent 50%);
+  }
+}
+
+
 /* Custom utilities */
 @layer utilities {
   /* Safe area padding for mobile devices */
@@ -102,4 +124,14 @@
 
 .animate-pulse {
   animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  @apply bg-gray-300 rounded-full hover:bg-gray-400 transition-colors;
 }

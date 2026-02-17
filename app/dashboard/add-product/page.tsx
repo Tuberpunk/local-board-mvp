@@ -6,12 +6,7 @@ import Link from 'next/link';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { 
-  ChevronLeft, 
-  Package, 
-  Wrench, 
-  Loader2,
-  AlertCircle,
-  CheckCircle2
+  ChevronLeft, Package, Wrench, Loader2, AlertCircle, CheckCircle2, ImagePlus
 } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { productFormSchema, ProductFormSchema } from '@/lib/utils/validators';
@@ -19,430 +14,173 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ImageUploader } from '@/components/forms/ImageUploader';
 import { Category } from '@/types/category';
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
-
-// Типы для формы
-const productTypes = [
-  { value: 'good', label: 'Товар', icon: Package, description: 'Физический товар с наличием' },
-  { value: 'service', label: 'Услуга', icon: Wrench, description: 'Услуга с ценой "от"' },
-] as const;
+import { createClient } from '@/lib/supabase/client';
 
 export default function AddProductPage() {
   const router = useRouter();
-  const supabase = createClientComponentClient();
-  
+  const supabase = createClient();
   const [categories, setCategories] = useState<Category[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [shopId, setShopId] = useState<string | null>(null);
 
-  // Загрузка категорий и проверка магазина
-  useEffect(() => {
-    async function loadData() {
-      setIsLoading(true);
-      
-      try {
-        // Проверяем авторизацию
-        const { data: { session } } = await supabase.auth.getSession();
-        
-        if (!session) {
-          router.push('/login?redirect=/dashboard/add-product');
-          return;
-        }
-
-        // Загружаем категории
-        const { data: categoriesData, error: categoriesError } = await supabase
-          .from('categories')
-          .select('*')
-          .order('sort_order', { ascending: true });
-
-        if (categoriesError) throw categoriesError;
-        setCategories(categoriesData || []);
-
-        // Проверяем, есть ли у пользователя магазин
-        const { data: shopData, error: shopError } = await supabase
-          .from('shops')
-          .select('id')
-          .eq('profile_id', session.user.id)
-          .single();
-
-        if (shopError && shopError.code !== 'PGRST116') {
-          throw shopError;
-        }
-
-        if (!shopData) {
-          // Перенаправляем на создание магазина
-          router.push('/dashboard/create-shop?redirect=/dashboard/add-product');
-          return;
-        }
-
-        setShopId(shopData.id);
-      } catch (err) {
-        console.error('Error loading data:', err);
-        setError('Ошибка загрузки данных. Попробуйте позже.');
-      } finally {
-        setIsLoading(false);
-      }
-    }
-
-    loadData();
-  }, [router, supabase]);
-
-  // React Hook Form
-  const {
-    register,
-    handleSubmit,
-    watch,
-    setValue,
-    formState: { errors },
-    reset,
-  } = useForm<ProductFormSchema>({
+  // Hook Form
+  const { register, handleSubmit, watch, setValue, formState: { errors, isSubmitting }, reset } = useForm<ProductFormSchema>({
     resolver: zodResolver(productFormSchema),
-    defaultValues: {
-      title: '',
-      description: '',
-      type: 'good',
-      price: null,
-      price_from: false,
-      is_available: true,
-      category_id: null,
-      images: [],
-    },
+    defaultValues: { type: 'good', price_from: false, is_available: true, images: [] },
   });
 
   const selectedType = watch('type');
   const selectedImages = watch('images');
-  const priceFrom = watch('price_from');
 
-  // Обработчик отправки формы
+  // Load Data
+  useEffect(() => {
+    async function init() {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) return router.push('/login');
+
+        const { data: shop } = await supabase.from('shops').select('id').eq('profile_id', session.user.id).single();
+        if (!shop) return router.push('/dashboard/create-shop');
+        setShopId(shop.id);
+
+        const { data: cats } = await supabase.from('categories').select('*').order('sort_order');
+        setCategories(cats || []);
+      } catch (e) { console.error(e); } finally { setIsLoading(false); }
+    }
+    init();
+  }, [router, supabase]);
+
   const onSubmit = async (data: ProductFormSchema) => {
-    if (!shopId) {
-      setError('Магазин не найден. Создайте магазин перед добавлением товаров.');
-      return;
-    }
-
-    setIsSubmitting(true);
-    setError(null);
-
     try {
-      const { error: insertError } = await supabase
-        .from('products')
-        .insert({
-          shop_id: shopId,
-          title: data.title,
-          description: data.description,
-          type: data.type,
-          price: data.price,
-          price_from: data.price_from,
-          is_available: data.is_available,
-          category_id: data.category_id,
-          images: data.images,
-          is_active: true,
-        });
-
-      if (insertError) {
-        if (insertError.code === '23514') {
-          throw new Error('Проверьте правильность заполнения полей');
-        }
-        throw insertError;
-      }
-
-      setSuccess(true);
-      
-      // Сбрасываем форму
+      if (!shopId) return;
+      const { error } = await supabase.from('products').insert({ ...data, shop_id: shopId, is_active: true });
+      if (error) throw error;
       reset();
-      
-      // Перенаправляем через 1.5 секунды
-      setTimeout(() => {
-        router.push('/dashboard');
-        router.refresh();
-      }, 1500);
-    } catch (err) {
-      console.error('Error creating product:', err);
-      setError(
-        err instanceof Error 
-          ? err.message 
-          : 'Ошибка при создании объявления. Попробуйте позже.'
-      );
-    } finally {
-      setIsSubmitting(false);
-    }
+      router.push('/dashboard');
+    } catch (e) { alert('Ошибка при публикации'); }
   };
 
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="flex items-center gap-3">
-          <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
-          <span className="text-gray-600">Загрузка...</span>
-        </div>
-      </div>
-    );
-  }
+  if (isLoading) return <div className="h-screen flex items-center justify-center bg-gray-50"><Loader2 className="w-8 h-8 animate-spin text-blue-600" /></div>;
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white border-b sticky top-0 z-10">
-        <div className="max-w-3xl mx-auto px-4 h-14 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Link
-              href="/dashboard"
-              className="p-2 -ml-2 hover:bg-gray-100 rounded-full transition-colors"
-            >
-              <ChevronLeft className="w-5 h-5" />
-            </Link>
-            <h1 className="font-semibold text-lg">Новое объявление</h1>
-          </div>
+    <div className="min-h-screen bg-gray-50/50 pb-20">
+      {/* Navbar */}
+      <nav className="bg-white/80 backdrop-blur-md border-b sticky top-0 z-30 px-4 h-16 flex items-center justify-between max-w-5xl mx-auto w-full rounded-b-2xl sm:rounded-none">
+        <div className="flex items-center gap-3 text-gray-800">
+          <Link href="/dashboard" className="p-2 -ml-2 hover:bg-gray-100 rounded-full transition-colors"><ChevronLeft className="w-5 h-5" /></Link>
+          <span className="font-bold text-lg tracking-tight">Новое объявление</span>
         </div>
-      </header>
+      </nav>
 
-      {/* Main Content */}
-      <main className="max-w-3xl mx-auto px-4 py-6">
-        {/* Success Message */}
-        {success && (
-          <Alert className="mb-6 bg-green-50 border-green-200">
-            <CheckCircle2 className="w-4 h-4 text-green-600" />
-            <AlertDescription className="text-green-800">
-              Объявление успешно создано! Перенаправляем...
-            </AlertDescription>
-          </Alert>
-        )}
-
-        {/* Error Message */}
-        {error && (
-          <Alert variant="destructive" className="mb-6">
-            <AlertCircle className="w-4 h-4" />
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
-
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-          {/* Тип объявления */}
-          <section className="bg-white rounded-xl p-4 sm:p-6 space-y-4">
-            <h2 className="font-semibold text-gray-900">Тип объявления</h2>
-            
-            <div className="grid grid-cols-2 gap-3">
-              {productTypes.map((type) => {
-                const Icon = type.icon;
-                const isSelected = selectedType === type.value;
-                
-                return (
-                  <button
-                    key={type.value}
-                    type="button"
-                    onClick={() => setValue('type', type.value)}
-                    className={cn(
-                      'p-4 rounded-xl border-2 text-left transition-all',
-                      isSelected
-                        ? 'border-blue-500 bg-blue-50'
-                        : 'border-gray-200 hover:border-gray-300'
-                    )}
-                  >
-                    <Icon className={cn(
-                      'w-6 h-6 mb-2',
-                      isSelected ? 'text-blue-600' : 'text-gray-500'
-                    )} />
-                    <p className={cn(
-                      'font-medium',
-                      isSelected ? 'text-blue-900' : 'text-gray-900'
-                    )}>
-                      {type.label}
-                    </p>
-                    <p className="text-xs text-gray-500 mt-1">
-                      {type.description}
-                    </p>
-                  </button>
-                );
-              })}
+      <main className="max-w-3xl mx-auto px-4 py-8">
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-8">
+          
+          {/* 1. Тип объявления */}
+          <div className="space-y-4">
+            <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+              1. Что вы предлагаете?
+            </h3>
+            <div className="grid grid-cols-2 gap-4">
+              {[
+                { id: 'good', label: 'Товар', icon: Package, desc: 'Вещи, электроника...' },
+                { id: 'service', label: 'Услуга', icon: Wrench, desc: 'Ремонт, уроки...' }
+              ].map((item) => (
+                <div
+                  key={item.id}
+                  onClick={() => setValue('type', item.id as any)}
+                  className={cn(
+                    "cursor-pointer relative overflow-hidden rounded-2xl border-2 p-5 transition-all hover:scale-[1.02]",
+                    selectedType === item.id 
+                      ? "border-blue-600 bg-blue-50/50 shadow-md ring-1 ring-blue-600/20" 
+                      : "border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm"
+                  )}
+                >
+                  <item.icon className={cn("w-8 h-8 mb-3", selectedType === item.id ? "text-blue-600" : "text-gray-400")} />
+                  <div className="font-bold text-gray-900">{item.label}</div>
+                  <div className="text-xs text-gray-500 mt-1">{item.desc}</div>
+                </div>
+              ))}
             </div>
-          </section>
+          </div>
 
-          {/* Фотографии */}
-          <section className="bg-white rounded-xl p-4 sm:p-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="font-semibold text-gray-900">Фотографии</h2>
-              <span className="text-sm text-gray-500">
-                {selectedImages.length}/10
+          {/* 2. Фотографии */}
+          <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm space-y-4">
+            <div className="flex justify-between items-center">
+              <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+                <ImagePlus className="w-5 h-5 text-blue-600" /> Фотографии
+              </h3>
+              <span className="text-xs font-medium px-2 py-1 bg-gray-100 rounded-full text-gray-600">
+                {selectedImages.length} / 10
               </span>
             </div>
-            
-            <ImageUploader
-              images={selectedImages}
-              onImagesChange={(images) => setValue('images', images)}
-              maxImages={10}
-            />
-          </section>
-
-          {/* Основная информация */}
-          <section className="bg-white rounded-xl p-4 sm:p-6 space-y-4">
-            <h2 className="font-semibold text-gray-900">Описание</h2>
-            
-            {/* Название */}
-            <div className="space-y-2">
-              <Label htmlFor="title">
-                Название <span className="text-red-500">*</span>
-              </Label>
-              <Input
-                id="title"
-                placeholder="Например: iPhone 14 Pro 256GB"
-                {...register('title')}
-                className={cn(errors.title && 'border-red-500')}
-              />
-              {errors.title && (
-                <p className="text-sm text-red-500">{errors.title.message}</p>
-              )}
+            <div className="bg-gray-50 rounded-xl p-2 border border-dashed border-gray-300">
+               <ImageUploader images={selectedImages} onImagesChange={(imgs) => setValue('images', imgs)} maxImages={10} />
             </div>
+          </div>
 
-            {/* Описание */}
-            <div className="space-y-2">
-              <Label htmlFor="description">
-                Описание <span className="text-red-500">*</span>
-              </Label>
-              <Textarea
-                id="description"
-                placeholder="Подробно опишите товар или услугу..."
-                rows={5}
-                {...register('description')}
-                className={cn(errors.description && 'border-red-500')}
-              />
-              {errors.description && (
-                <p className="text-sm text-red-500">{errors.description.message}</p>
-              )}
-            </div>
-
-            {/* Категория */}
-            <div className="space-y-2">
-              <Label htmlFor="category">Категория</Label>
-              <Select
-                value={watch('category_id') || 'none'}
-                onValueChange={(value) => 
-                  setValue('category_id', value === 'none' ? null : value)
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Выберите категорию" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Без категории</SelectItem>
-                  {categories.map((category) => (
-                    <SelectItem key={category.id} value={category.id}>
-                      {category.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </section>
-
-          {/* Цена и наличие */}
-          <section className="bg-white rounded-xl p-4 sm:p-6 space-y-4">
-            <h2 className="font-semibold text-gray-900">Цена и наличие</h2>
+          {/* 3. Описание */}
+          <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm space-y-5">
+            <h3 className="font-semibold text-gray-900">Детали объявления</h3>
             
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {/* Цена */}
-              <div className="space-y-2">
-                <Label htmlFor="price">
-                  Цена {selectedType === 'service' && '(необязательно)'}
-                </Label>
+            <div className="grid gap-5">
+              <div className="space-y-1.5">
+                <Label className="text-gray-700">Название</Label>
+                <Input placeholder="Например: iPhone 15 Pro, как новый" {...register('title')} className="h-12 bg-gray-50 border-transparent hover:bg-white hover:border-gray-200 focus:bg-white transition-all text-lg" />
+                {errors.title && <p className="text-red-500 text-sm">{errors.title.message}</p>}
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-gray-700">Категория</Label>
+                <Select onValueChange={(v) => setValue('category_id', v === 'none' ? null : v)}>
+                  <SelectTrigger className="h-12 bg-gray-50 border-transparent hover:bg-white hover:border-gray-200 focus:bg-white"><SelectValue placeholder="Выберите категорию" /></SelectTrigger>
+                  <SelectContent>
+                    {categories.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-gray-700">Описание</Label>
+                <Textarea placeholder="Расскажите о преимуществах и состоянии..." {...register('description')} className="min-h-[120px] bg-gray-50 border-transparent hover:bg-white hover:border-gray-200 focus:bg-white transition-all resize-none" />
+                {errors.description && <p className="text-red-500 text-sm">{errors.description.message}</p>}
+              </div>
+            </div>
+          </div>
+
+          {/* 4. Цена */}
+          <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm space-y-5">
+            <h3 className="font-semibold text-gray-900">Стоимость</h3>
+            <div className="flex flex-col sm:flex-row gap-6">
+              <div className="flex-1 space-y-1.5">
+                <Label>Цена (₽)</Label>
                 <div className="relative">
-                  <Input
-                    id="price"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    placeholder="0"
-                    {...register('price', { valueAsNumber: true })}
-                    className={cn(
-                      'pl-3 pr-12',
-                      errors.price && 'border-red-500'
-                    )}
-                  />
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">
-                    ₽
-                  </span>
+                  <Input type="number" placeholder="0" {...register('price', { valueAsNumber: true })} className="pl-4 h-12 text-lg font-medium bg-gray-50 border-transparent hover:bg-white hover:border-gray-200 focus:bg-white" />
+                  <span className="absolute right-4 top-3 text-gray-400 font-medium">₽</span>
                 </div>
-                {errors.price && (
-                  <p className="text-sm text-red-500">{errors.price.message}</p>
-                )}
               </div>
-
-              {/* Дополнительные опции */}
-              <div className="space-y-3 sm:pt-7">
-                {/* Цена "от" (для услуг) */}
-                {selectedType === 'service' && (
-                  <div className="flex items-center justify-between">
-                    <Label htmlFor="price_from" className="cursor-pointer">
-                      Цена "от"
-                      <span className="block text-xs text-gray-500 font-normal">
-                        Укажите, если цена может варьироваться
-                      </span>
-                    </Label>
-                    <Switch
-                      id="price_from"
-                      checked={priceFrom}
-                      onCheckedChange={(checked) => 
-                        setValue('price_from', checked)
-                      }
-                    />
-                  </div>
-                )}
-
-                {/* В наличии */}
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="is_available" className="cursor-pointer">
-                    В наличии / Доступно
-                  </Label>
-                  <Switch
-                    id="is_available"
-                    checked={watch('is_available')}
-                    onCheckedChange={(checked) => 
-                      setValue('is_available', checked)
-                    }
-                  />
-                </div>
+              <div className="flex items-center gap-4 sm:pt-6">
+                 {selectedType === 'service' && (
+                    <div className="flex items-center gap-2">
+                      <Switch id="price_from" onCheckedChange={(c) => setValue('price_from', c)} />
+                      <Label htmlFor="price_from" className="cursor-pointer">Цена "от"</Label>
+                    </div>
+                 )}
+                 <div className="flex items-center gap-2">
+                    <Switch id="is_available" defaultChecked onCheckedChange={(c) => setValue('is_available', c)} />
+                    <Label htmlFor="is_available" className="cursor-pointer">Активно</Label>
+                 </div>
               </div>
             </div>
-          </section>
+          </div>
 
-          {/* Кнопки */}
-          <div className="flex flex-col sm:flex-row gap-3 pt-4">
-            <Button
-              type="button"
-              variant="outline"
-              className="flex-1 sm:flex-none"
-              onClick={() => router.push('/dashboard')}
-              disabled={isSubmitting}
-            >
-              Отмена
-            </Button>
-            <Button
-              type="submit"
-              className="flex-1 bg-blue-600 hover:bg-blue-700"
-              disabled={isSubmitting || success}
-            >
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Создание...
-                </>
-              ) : (
-                'Опубликовать'
-              )}
+          {/* Submit Button */}
+          <div className="pt-4 pb-10">
+            <Button type="submit" disabled={isSubmitting} className="w-full h-14 text-lg bg-gray-900 hover:bg-black text-white rounded-xl shadow-lg shadow-gray-900/20 transition-all hover:-translate-y-1 active:translate-y-0">
+              {isSubmitting ? <Loader2 className="animate-spin mr-2" /> : 'Опубликовать объявление'}
             </Button>
           </div>
         </form>
