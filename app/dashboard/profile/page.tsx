@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { Loader2, User, Save, Lock, ArrowLeft, Mail, AlertTriangle, Trash2 } from 'lucide-react';
 import { ImageUploader } from '@/components/forms/ImageUploader';
 import Link from 'next/link';
+import toast from 'react-hot-toast';
 
 export default function ProfilePage() {
   const supabase = createClient();
@@ -79,10 +80,10 @@ export default function ProfilePage() {
 
       if (authError) throw authError;
 
-      alert('Профиль обновлен!');
+      toast.success('Профиль обновлен!');
       router.refresh();
     } catch (error: any) {
-      alert('Ошибка: ' + error.message);
+      toast.error('Ошибка: ' + error.message);
     } finally {
       setSaving(false);
     }

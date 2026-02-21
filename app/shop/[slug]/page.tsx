@@ -6,6 +6,47 @@ import { ProductCard } from '@/components/product/ProductCard';
 import { Product } from '@/types/product';
 import { ContactButtons } from '@/components/product/ContactButtons';
 import dynamicImport from 'next/dynamic'; // Переименовал, чтобы не конфликтовало с переменной dynamic
+import { Metadata } from 'next';
+
+
+export async function generateMetadata({ params }: { params: { slug: string } }): Promise<Metadata> {
+  const supabase = createClient();
+  const slug = decodeURIComponent(params.slug);
+
+  const { data: shop } = await supabase
+    .from('shops')
+    .select('name, description, avatar_url, city')
+    .eq('slug', slug)
+    .single();
+
+  if (!shop) {
+    return { title: 'Магазин не найден | LocalBoard' };
+  }
+
+  const seoTitle = `${shop.name} — Магазин в г. ${shop.city || 'Не указан'} | LocalBoard`;
+  const seoDescription = shop.description 
+    ? shop.description.slice(0, 150) + '...' 
+    : `Смотрите товары и услуги от ${shop.name} на LocalBoard.`;
+
+  return {
+    title: seoTitle,
+    description: seoDescription,
+    openGraph: {
+      title: seoTitle,
+      description: seoDescription,
+      images: shop.avatar_url ? [
+        {
+          url: shop.avatar_url,
+          width: 800,
+          height: 800,
+          alt: `Логотип магазина ${shop.name}`,
+        }
+      ] : [],
+      locale: 'ru_RU',
+      type: 'website',
+    },
+  };
+}
 
 // 1. ВАЖНОЕ ИСПРАВЛЕНИЕ: Отключаем кэширование
 export const dynamic = 'force-dynamic'; 

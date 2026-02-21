@@ -7,17 +7,17 @@ import { useRouter } from 'next/navigation';
 import { 
   Plus, Package, Store, TrendingUp, 
   Pencil, Trash2, Eye, Settings, LogOut, 
-  MapPin, Wrench, ExternalLink
+  MapPin, Wrench, ExternalLink, User
 } from 'lucide-react';
+import Image from 'next/image';
 
-// Типы данных
 type Product = {
   id: string;
   title: string;
   price: number | null;
   images: string[];
   is_active: boolean;
-  type: 'good' | 'service'; // Добавили тип
+  type: 'good' | 'service';
   views_count?: number; 
 };
 
@@ -34,7 +34,8 @@ export default function DashboardPage() {
   const supabase = createClient();
   const router = useRouter();
   
-  const [shop, setShop] = useState<Shop | null>(null);
+  const [shops, setShops] = useState<Shop[]>([]);
+  const [activeShopId, setActiveShopId] = useState<string | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -47,24 +48,31 @@ export default function DashboardPage() {
           return;
         }
 
-        // 1. Получаем магазин пользователя
-        const { data: shopData } = await supabase
+        // Получаем ВСЕ магазины пользователя
+        const { data: shopsData } = await supabase
           .from('shops')
           .select('id, name, slug, avatar_url, city, description')
-          .eq('profile_id', session.user.id)
-          .single();
+          .eq('profile_id', session.user.id);
 
-        if (!shopData) {
+        if (!shopsData || shopsData.length === 0) {
           router.push('/dashboard/create-shop');
           return;
         }
-        setShop(shopData);
 
-        // 2. Получаем товары этого магазина
+        setShops(shopsData);
+
+        // Определяем активный магазин (из localStorage или первый по списку)
+        const savedShopId = localStorage.getItem('activeShopId');
+        const currentShop = shopsData.find(s => s.id === savedShopId) || shopsData[0];
+        
+        setActiveShopId(currentShop.id);
+        localStorage.setItem('activeShopId', currentShop.id); // Сохраняем выбор
+
+        // Загружаем товары активного магазина
         const { data: productsData } = await supabase
           .from('products')
           .select('*')
-          .eq('shop_id', shopData.id)
+          .eq('shop_id', currentShop.id)
           .order('created_at', { ascending: false });
 
         setProducts(productsData || []);
@@ -77,6 +85,12 @@ export default function DashboardPage() {
 
     loadDashboard();
   }, [router, supabase]);
+
+  const handleShopSwitch = (shopId: string) => {
+    localStorage.setItem('activeShopId', shopId);
+    setLoading(true);
+    window.location.reload();
+  };
 
   const handleDeleteProduct = async (productId: string) => {
     if (!confirm('Вы уверены, что хотите удалить это объявление?')) return;
@@ -92,6 +106,7 @@ export default function DashboardPage() {
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
+    localStorage.removeItem('activeShopId'); // Очищаем кеш при выходе
     router.push('/login');
     router.refresh();
   };
@@ -104,156 +119,168 @@ export default function DashboardPage() {
     );
   }
 
+  const activeShop = shops.find(s => s.id === activeShopId);
+
   return (
     <div className="min-h-screen bg-gray-50 pb-20">
-      {/* --- ШАПКА --- */}
-      
       <main className="max-w-6xl mx-auto px-4 sm:px-6 py-8 space-y-8">
         
-        {/* --- 1. КАРТОЧКА МАГАЗИНА (Управление Магазином) --- */}
-        <section className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm flex flex-col md:flex-row items-start md:items-center gap-6">
-          {/* Аватар */}
-          <div className="w-20 h-20 md:w-24 md:h-24 bg-gray-100 rounded-2xl flex-shrink-0 overflow-hidden border border-gray-200">
-             {shop?.avatar_url ? (
-               <img src={shop.avatar_url} alt={shop.name} className="w-full h-full object-cover" />
-             ) : (
-               <div className="w-full h-full flex items-center justify-center text-gray-400">
-                 <Store className="w-8 h-8" />
-               </div>
-             )}
+        
+        {/* Панель переключения магазинов */}
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-white p-4 rounded-2xl border border-gray-100 shadow-sm">
+          <div className="flex flex-wrap gap-2">
+            {shops.map(shop => (
+              <button
+                key={shop.id}
+                onClick={() => handleShopSwitch(shop.id)}
+                className={`px-4 py-2 rounded-xl font-medium transition-all ${
+                  activeShopId === shop.id 
+                    ? 'bg-blue-600 text-white shadow-md' 
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                {shop.name}
+              </button>
+            ))}
           </div>
           
-          {/* Инфо */}
-          <div className="flex-1">
-            <h1 className="text-2xl font-bold text-gray-900 mb-1">{shop?.name}</h1>
-            <div className="flex items-center gap-4 text-sm text-gray-500 mb-3">
-               <div className="flex items-center gap-1">
-                 <MapPin className="w-4 h-4" />
-                 {shop?.city || 'Город не указан'}
-               </div>
-               <div className="flex items-center gap-1">
-                 <Package className="w-4 h-4" />
-                 {products.length} объявлений
-               </div>
+          {shops.length < 2 && (
+            <Link 
+              href="/dashboard/create-shop"
+              className="flex items-center gap-2 text-sm font-medium text-blue-600 hover:text-blue-700 bg-blue-50 px-4 py-2 rounded-xl transition-colors"
+            >
+              <Plus className="w-4 h-4" /> Добавить магазин (ещё {2 - shops.length})
+            </Link>
+          )}
+        </div>
+
+        {/* КАРТОЧКА АКТИВНОГО МАГАЗИНА */}
+        {activeShop && (
+          <section className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm flex flex-col md:flex-row items-start md:items-center gap-6">
+            <div className="relative w-20 h-20 md:w-24 md:h-24 bg-gray-100 rounded-2xl flex-shrink-0 overflow-hidden border border-gray-200">
+     {activeShop.avatar_url ? (
+       <Image 
+         src={activeShop.avatar_url} 
+         alt={activeShop.name} 
+         fill 
+         className="object-cover" 
+         sizes="(max-width: 768px) 80px, 96px"
+       />
+     ) : (
+                 <div className="w-full h-full flex items-center justify-center text-gray-400">
+                   <Store className="w-8 h-8" />
+                 </div>
+               )}
             </div>
-            <p className="text-gray-600 text-sm line-clamp-2 max-w-2xl">
-              {shop?.description || 'Описание отсутствует'}
-            </p>
+            
+            <div className="flex-1">
+              <h1 className="text-2xl font-bold text-gray-900 mb-1">{activeShop.name}</h1>
+              <div className="flex items-center gap-4 text-sm text-gray-500 mb-3">
+                 {activeShop.city && <span className="flex items-center gap-1"><MapPin className="w-4 h-4"/> {activeShop.city}</span>}
+                 <Link href={`/shop/${activeShop.slug}`} target="_blank" className="flex items-center gap-1 text-blue-600 hover:underline">
+                    <ExternalLink className="w-4 h-4" /> Посмотреть страницу
+                 </Link>
+              </div>
+              <p className="text-gray-600 text-sm line-clamp-2 max-w-2xl">{activeShop.description}</p>
+            </div>
+            
+            <div className="flex flex-col sm:flex-row gap-2 w-full md:w-auto mt-4 md:mt-0">
+               <Link href="/dashboard/settings" className="flex-1 md:flex-none px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium rounded-xl flex items-center justify-center gap-2 transition-colors">
+                  <Settings className="w-4 h-4"/> Настройки магазина 
+               </Link>
+            </div>
+          </section>
+        )}
+
+        {/* СТАТИСТИКА (можно расширить в будущем) */}
+        <section className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm">
+            <div className="text-gray-500 text-sm font-medium mb-1 flex items-center gap-2">
+              <Package className="w-4 h-4" /> Объявления
+            </div>
+            <div className="text-2xl font-bold text-gray-900">{products.length}</div>
           </div>
-<Link 
-     href="/dashboard/profile"
-     className="flex items-center gap-2 text-sm font-medium text-gray-500 hover:text-blue-600 transition-colors px-2"
-     title="Настройки профиля"
-  >
-     <Settings className="w-4 h-4" />
-     <span className="hidden sm:inline">Профиль</span>
-  </Link>
-          {/* Кнопка Редактировать Магазин */}
-          <Link 
-            href="/dashboard/settings"
-            className="w-full md:w-auto px-5 py-3 bg-white border border-gray-200 hover:border-gray-300 hover:bg-gray-50 text-gray-700 rounded-xl font-semibold transition-all flex items-center justify-center gap-2 whitespace-nowrap"
-          >
-            <Settings className="w-4 h-4" />
-            Настроить магазин
-          </Link>
+          <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm">
+            <div className="text-gray-500 text-sm font-medium mb-1 flex items-center gap-2">
+              <Eye className="w-4 h-4" /> Просмотры
+            </div>
+            <div className="text-2xl font-bold text-gray-900">0</div>
+          </div>
         </section>
 
-        {/* --- 2. УПРАВЛЕНИЕ ТОВАРАМИ И УСЛУГАМИ --- */}
-        <section>
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-            <h2 className="text-xl font-bold text-gray-900">Мои объявления</h2>
-            <Link 
-              href="/dashboard/add-product" 
-              className="inline-flex items-center justify-center gap-2 bg-gray-900 hover:bg-black text-white px-5 py-3 rounded-xl font-medium shadow-lg shadow-gray-900/10 transition-all hover:-translate-y-0.5 active:translate-y-0"
-            >
-              <Plus className="w-5 h-5" />
-              Добавить
+        {/* СПИСОК ТОВАРОВ */}
+        <section className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+          <div className="p-6 border-b border-gray-100 flex flex-col sm:flex-row items-center justify-between gap-4">
+            <h2 className="text-xl font-bold text-gray-900">Управление объявлениями</h2>
+            <Link href="/dashboard/add-product" className="w-full sm:w-auto px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl flex items-center justify-center gap-2 shadow-sm transition-all">
+              <Plus className="w-5 h-5"/> Добавить объявление
             </Link>
           </div>
 
-          {products.length === 0 ? (
-            <div className="text-center py-20 bg-white rounded-3xl border border-dashed border-gray-200">
-              <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Package className="w-8 h-8 text-gray-300" />
+          <div className="p-0">
+            {products.length === 0 ? (
+              <div className="p-12 text-center flex flex-col items-center">
+                <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mb-4">
+                  <Package className="w-8 h-8 text-gray-400" />
+                </div>
+                <h3 className="text-lg font-bold text-gray-900 mb-2">У вас пока нет объявлений в этом магазине</h3>
+                <p className="text-gray-500 mb-6 max-w-sm">Добавьте свой первый товар или услугу, чтобы начать привлекать клиентов.</p>
+                <Link href="/dashboard/add-product" className="px-5 py-2.5 bg-blue-600 text-white font-medium rounded-xl flex items-center gap-2 hover:bg-blue-700 transition-colors">
+                  <Plus className="w-5 h-5"/> Создать объявление
+                </Link>
               </div>
-              <h3 className="text-lg font-semibold text-gray-900">Пока пусто</h3>
-              <p className="text-gray-500 max-w-sm mx-auto mt-2 mb-6">
-                Начните с добавления первого товара или услуги.
-              </p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-              {products.map((product) => (
-                <div key={product.id} className="group bg-white rounded-2xl border border-gray-100 overflow-hidden hover:shadow-xl transition-all duration-300 hover:-translate-y-1 flex flex-col h-full">
-
-                  {/* Картинка */}
-                  <Link href={`/product/${product.id}`} className="aspect-square bg-gray-100 relative overflow-hidden block">
-                    {product.images && product.images[0] ? (
-                      <img 
-                        src={product.images[0]} 
-                        alt={product.title}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                      />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center text-gray-300">
-                        {product.type === 'service' ? <Wrench className="w-10 h-10"/> : <Package className="w-10 h-10" />}
-                      </div>
-                    )}
-                    
-                    {/* БЕЙДЖ: Товар или Услуга */}
-                    <div className="absolute top-3 left-3 flex gap-2">
-                       <span className={`px-2 py-1 rounded-md text-xs font-bold backdrop-blur-md ${
-                         product.type === 'service' 
-                           ? 'bg-orange-500/90 text-white' 
-                           : 'bg-blue-600/90 text-white'
-                       }`}>
-                         {product.type === 'service' ? 'Услуга' : 'Товар'}
-                       </span>
-                    </div>
-
-                    {/* Статус */}
-                    <div className="absolute top-3 right-3">
+            ) : (
+              <div className="divide-y divide-gray-100">
+                {products.map((product) => (
+                  <div key={product.id} className="p-4 sm:p-6 flex flex-col sm:flex-row items-start sm:items-center gap-4 hover:bg-gray-50 transition-colors">
+                    <div className="w-full sm:w-20 h-48 sm:h-20 bg-gray-100 rounded-xl overflow-hidden flex-shrink-0 relative">
+                      {product.images && product.images[0] ? (
+                        <Image 
+      src={product.images[0]} 
+      alt={product.title} 
+      fill 
+      className="object-cover" 
+      sizes="(max-width: 640px) 100vw, 80px"
+    />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-gray-400">
+                          {product.type === 'good' ? <Package className="w-6 h-6" /> : <Wrench className="w-6 h-6" />}
+                        </div>
+                      )}
                       {!product.is_active && (
-                        <span className="px-2 py-1 rounded-md text-xs font-bold bg-black/60 backdrop-blur-md text-white">
-                          Скрыт
-                        </span>
+                        <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                          <span className="text-xs font-bold text-white px-2 py-1 bg-black/50 rounded-lg">Скрыто</span>
+                        </div>
                       )}
                     </div>
-                  </Link>
-
-                  {/* Инфо */}
-                  <div className="p-4 flex flex-col flex-grow">
-                    <div className="mb-2">
-                      <Link href={`/product/${product.id}`} className="font-bold text-gray-900 line-clamp-1 hover:text-blue-600 transition-colors">
-                        {product.title}
-                      </Link>
-                    </div>
-                    <div className="text-lg font-bold text-gray-900 mb-4">
-                      {product.price ? `${product.price.toLocaleString('ru-RU')} ₽` : 'Цена не указана'}
+                    
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md ${product.type === 'good' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}`}>
+                          {product.type === 'good' ? 'Товар' : 'Услуга'}
+                        </span>
+                      </div>
+                      <h3 className="font-bold text-gray-900 truncate">{product.title}</h3>
+                      <div className="text-blue-600 font-semibold mt-1">
+                        {product.price ? `${product.price.toLocaleString('ru-RU')} ₽` : 'Цена не указана'}
+                      </div>
                     </div>
                     
-                    {/* КНОПКИ РЕДАКТИРОВАНИЯ */}
-                    <div className="flex gap-2 mt-auto pt-2 border-t border-gray-50">
-                      <Link 
-                        href={`/dashboard/edit-product/${product.id}`}
-                        className="flex-1 h-10 flex items-center justify-center gap-1.5 bg-gray-50 hover:bg-blue-50 hover:text-blue-600 text-gray-700 rounded-lg text-sm font-medium transition-colors"
-                      >
-                        <Pencil className="w-4 h-4" /> Изменить
+                    <div className="flex gap-2 w-full sm:w-auto">
+                      <Link href={`/dashboard/edit-product/${product.id}`} className="flex-1 sm:flex-none p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-colors flex items-center justify-center">
+                        <Pencil className="w-5 h-5" />
                       </Link>
-                      <button 
-                        onClick={() => handleDeleteProduct(product.id)}
-                        className="h-10 w-10 flex items-center justify-center bg-gray-50 hover:bg-red-50 hover:text-red-600 text-gray-400 rounded-lg transition-colors"
-                        title="Удалить"
-                      >
-                        <Trash2 className="w-4 h-4" />
+                      <button onClick={() => handleDeleteProduct(product.id)} className="flex-1 sm:flex-none p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors flex items-center justify-center">
+                        <Trash2 className="w-5 h-5" />
                       </button>
                     </div>
                   </div>
-                </div>
-              ))}
-            </div>
-          )}
+                ))}
+              </div>
+            )}
+          </div>
         </section>
+
       </main>
     </div>
   );

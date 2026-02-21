@@ -7,6 +7,8 @@ import { Loader2, Save, Store, MapPin, Phone, Globe, MessageCircle, Trash2, Aler
 import { ImageUploader } from '@/components/forms/ImageUploader';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
+import toast from 'react-hot-toast';
+import Image from 'next/image';
 
 const AddressMap = dynamic(() => import('@/components/forms/AddressMap'), { 
   ssr: false,
@@ -19,7 +21,7 @@ export default function ShopSettingsPage() {
   
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [deleting, setDeleting] = useState(false); // Состояние удаления
+  const [deleting, setDeleting] = useState(false);
   const [shopId, setShopId] = useState<string | null>(null);
   
   // Данные формы
@@ -30,12 +32,14 @@ export default function ShopSettingsPage() {
   const [avatar, setAvatar] = useState<string[]>([]);
 
   const [productCount, setProductCount] = useState(0);
+  
   // Контакты
   const [phone, setPhone] = useState('');
   const [whatsapp, setWhatsapp] = useState('');
   const [telegram, setTelegram] = useState('');
   const [contactEmail, setContactEmail] = useState('');
 
+  // ВОТ ЭТО СОСТОЯНИЕ РЕШАЕТ ВАШУ ОШИБКУ:
   const [showMap, setShowMap] = useState(false);
 
   useEffect(() => {
@@ -43,11 +47,18 @@ export default function ShopSettingsPage() {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return router.push('/login');
 
-      const { data: shop } = await supabase
-        .from('shops')
-        .select('*')
-        .eq('profile_id', session.user.id)
-        .single();
+      // Получаем ID активного магазина из памяти
+      const activeShopId = localStorage.getItem('activeShopId');
+
+      let query = supabase.from('shops').select('*').eq('profile_id', session.user.id);
+      
+      // Если есть сохраненный активный магазин, берем именно его
+      if (activeShopId) {
+        query = query.eq('id', activeShopId);
+      }
+
+      const { data: shops } = await query;
+      const shop = shops?.[0]; // Берем первый найденный магазин из выборки
 
       if (shop) {
         setShopId(shop.id);
@@ -60,9 +71,10 @@ export default function ShopSettingsPage() {
         setTelegram(shop.contact_telegram || '');
         setContactEmail(shop.contact_email || '');
         if (shop.avatar_url) setAvatar([shop.avatar_url]);
+        
         const { count } = await supabase
           .from('products')
-          .select('*', { count: 'exact', head: true }) // head: true значит "не грузи данные, только посчитай"
+          .select('*', { count: 'exact', head: true })
           .eq('shop_id', shop.id);
         
         setProductCount(count || 0);
@@ -73,7 +85,7 @@ export default function ShopSettingsPage() {
   }, [router, supabase]);
 
   const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
+  e.preventDefault();
     if (!shopId) return;
     setSaving(true);
 
@@ -93,20 +105,19 @@ export default function ShopSettingsPage() {
 
       const { error } = await supabase.from('shops').update(updates).eq('id', shopId);
       if (error) throw error;
-      alert('Настройки успешно сохранены!');
+      
+      toast.success('Настройки успешно сохранены!');
       router.refresh();
     } catch (err) {
-      alert('Ошибка при сохранении');
+      toast.error('Ошибка при сохранении настроек');
     } finally {
       setSaving(false);
     }
   };
 
-  // --- ФУНКЦИЯ УДАЛЕНИЯ ---
   const handleDeleteShop = async () => {
     if (!shopId) return;
 
-    // 1. Спрашиваем подтверждение
     const confirmed = window.confirm(
       "Вы уверены, что хотите удалить магазин?\n\nВСЕ ВАШИ ТОВАРЫ БУДУТ УДАЛЕНЫ БЕЗВОЗВРАТНО.\nЭто действие нельзя отменить."
     );
@@ -116,17 +127,14 @@ export default function ShopSettingsPage() {
     setDeleting(true);
 
     try {
-      // 2. Удаляем магазин (товары удалятся каскадно, если настроено в БД)
-      const { error } = await supabase
-        .from('shops')
-        .delete()
-        .eq('id', shopId);
-
+      const { error } = await supabase.from('shops').delete().eq('id', shopId);
       if (error) throw error;
 
-      // 3. Редирект на главную
-      alert('Магазин удален.');
-      router.push('/');
+      // Очищаем кеш активного магазина при удалении
+      localStorage.removeItem('activeShopId');
+
+      toast.success('Магазин успешно удален');
+      router.push('/dashboard');
       router.refresh();
     } catch (error: any) {
       console.error(error);
@@ -156,9 +164,15 @@ export default function ShopSettingsPage() {
           {/* СЕКЦИЯ 1: Логотип и Название */}
           <section className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100/50 flex flex-col sm:flex-row gap-6">
             <div className="relative w-32 h-32 flex-shrink-0">
-               <div className="w-full h-full rounded-2xl overflow-hidden border border-gray-100 bg-gray-50 flex items-center justify-center">
-                  {avatar.length > 0 ? (
-                    <img src={avatar[0]} alt="Avatar" className="w-full h-full object-cover" />
+               <div className="relative w-full h-full rounded-2xl overflow-hidden border border-gray-100 bg-gray-50 flex items-center justify-center">
+        {avatar.length > 0 ? (
+          <Image 
+            src={avatar[0]} 
+            alt="Avatar" 
+            fill 
+            className="object-cover" 
+            sizes="128px"
+          />
                   ) : (
                     <Store className="w-10 h-10 text-gray-300" />
                   )}

@@ -4,26 +4,39 @@ import { CatalogFilters } from '@/components/catalog/CatalogFilters';
 import { PackageSearch } from 'lucide-react';
 import Link from 'next/link';
 
-// Этот тип нужен для типизации параметров URL
 type Props = {
   searchParams: { [key: string]: string | string[] | undefined }
 };
 
-export const dynamic = 'force-dynamic'; // Отключаем кэширование, чтобы поиск работал всегда свежим
+export const dynamic = 'force-dynamic';
 
 export default async function CatalogPage({ searchParams }: Props) {
   const supabase = createClient();
   
-  // 1. Получаем параметры фильтрации
   const q = typeof searchParams.q === 'string' ? searchParams.q : '';
   const categoryId = typeof searchParams.category === 'string' ? searchParams.category : '';
   const type = typeof searchParams.type === 'string' ? searchParams.type : 'all';
   const sort = typeof searchParams.sort === 'string' ? searchParams.sort : 'newest';
+  
+  // Парсим параметры цены
+  const minPriceStr = typeof searchParams.min_price === 'string' ? searchParams.min_price : '';
+  const maxPriceStr = typeof searchParams.max_price === 'string' ? searchParams.max_price : '';
+  const minPrice = minPriceStr ? parseInt(minPriceStr) : 0;
+  const maxPrice = maxPriceStr ? parseInt(maxPriceStr) : null;
 
-  // 2. Загружаем категории для фильтра
   const { data: categories } = await supabase.from('categories').select('id, name').order('name');
 
-  // 3. Строим запрос к товарам
+  // 1. ПОЛУЧАЕМ МАКСИМАЛЬНУЮ ЦЕНУ (Без учета фильтров цены, чтобы ползунок не сжимался)
+  let maxPriceQuery = supabase.from('products').select('price').eq('is_active', true);
+  if (q) maxPriceQuery = maxPriceQuery.or(`title.ilike.%${q}%,description.ilike.%${q}%`);
+  if (categoryId) maxPriceQuery = maxPriceQuery.eq('category_id', categoryId);
+  if (type === 'good') maxPriceQuery = maxPriceQuery.eq('type', 'good');
+  else if (type === 'service') maxPriceQuery = maxPriceQuery.eq('type', 'service');
+
+  const { data: maxPriceData } = await maxPriceQuery.order('price', { ascending: false }).limit(1);
+  const maxAvailablePrice = maxPriceData?.[0]?.price || 10000; // По умолчанию 10000, если товаров нет
+
+  // 2. ОСНОВНОЙ ЗАПРОС С УЧЕТОМ ЦЕНЫ
   let query = supabase
     .from('products')
     .select(`
@@ -31,40 +44,26 @@ export default async function CatalogPage({ searchParams }: Props) {
       shop:shops (name, slug),
       category:categories (name, slug)
     `)
-    .eq('is_active', true);
+    .eq('is_active', true)
+    .limit(50);
 
-  // Применяем фильтры, если они есть
-  if (q) {
-    // ilike - регистронезависимый поиск (title содержит q)
-    query = query.ilike('title', `%${q}%`);
-  }
+  if (q) query = query.or(`title.ilike.%${q}%,description.ilike.%${q}%`);
+  if (categoryId) query = query.eq('category_id', categoryId);
+  if (type === 'good') query = query.eq('type', 'good');
+  else if (type === 'service') query = query.eq('type', 'service');
 
-  if (categoryId) {
-    query = query.eq('category_id', categoryId);
-  }
+  // Применяем фильтры цены
+  if (minPrice > 0) query = query.gte('price', minPrice);
+  if (maxPrice !== null) query = query.lte('price', maxPrice);
 
-  if (type === 'good') {
-    query = query.eq('type', 'good');
-  } else if (type === 'service') {
-    query = query.eq('type', 'service');
-  }
-
-  // Применяем сортировку
   switch (sort) {
-    case 'cheap':
-      query = query.order('price', { ascending: true });
-      break;
-    case 'expensive':
-      query = query.order('price', { ascending: false });
-      break;
+    case 'cheap': query = query.order('price', { ascending: true }); break;
+    case 'expensive': query = query.order('price', { ascending: false }); break;
     case 'newest':
-    default:
-      query = query.order('created_at', { ascending: false });
-      break;
+    default: query = query.order('created_at', { ascending: false }); break;
   }
 
-  // Выполняем запрос
-  const { data: products, error } = await query;
+  const { data: products } = await query;
 
   return (
     <div className="min-h-screen bg-gray-50 pb-20">
@@ -77,10 +76,9 @@ export default async function CatalogPage({ searchParams }: Props) {
 
       <div className="max-w-7xl mx-auto px-4">
         
-        {/* Компонент фильтров (Клиентский) */}
-        <CatalogFilters categories={categories || []} />
+        {/* Передаем максимальную цену в компонент фильтров */}
+        <CatalogFilters categories={categories || []} maxAvailablePrice={maxAvailablePrice} />
 
-        {/* Результаты (Серверные) */}
         {products && products.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
             {products.map((product) => (

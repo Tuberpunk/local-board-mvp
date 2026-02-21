@@ -130,7 +130,7 @@ export default function Home() {
           </p>
           
           <div className="flex justify-center gap-3">
-             <Link href="#products" className="px-8 py-4 bg-gray-900 text-white rounded-2xl font-bold hover:bg-black transition-all shadow-xl shadow-gray-900/20">
+             <Link href="/catalog" className="px-8 py-4 bg-gray-900 text-white rounded-2xl font-bold hover:bg-black transition-all shadow-xl shadow-gray-900/20">
                Смотреть каталог
              </Link>
           </div>

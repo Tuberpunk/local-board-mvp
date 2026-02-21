@@ -1,9 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { Loader2, Store, Sparkles, ArrowRight, MapPin, Phone, Mail, Send, Globe, MessageCircle } from 'lucide-react';
+import toast from 'react-hot-toast';
 
 // 1. ДИНАМИЧЕСКИЙ ИМПОРТ КАРТЫ
 import dynamic from 'next/dynamic';
@@ -18,22 +19,38 @@ export default function CreateShopPage() {
   const redirectPath = searchParams.get('redirect') || '/dashboard/add-product';
   const supabase = createClient();
 
-  // Основная информация
+  const [isCheckingLimit, setIsCheckingLimit] = useState(true);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [city, setCity] = useState('');
   const [address, setAddress] = useState('');
-
-  // Состояние карты
   const [showMap, setShowMap] = useState(false);
-
-  // Контакты
   const [phone, setPhone] = useState('');
   const [whatsapp, setWhatsapp] = useState('');
   const [telegram, setTelegram] = useState('');
   const [email, setEmail] = useState('');
-
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // ПРОВЕРКА ЛИМИТА МАГАЗИНОВ
+  useEffect(() => {
+    async function checkLimit() {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) { router.push('/login'); return; }
+
+      const { count } = await supabase
+        .from('shops')
+        .select('*', { count: 'exact', head: true })
+        .eq('profile_id', session.user.id);
+
+      if (count && count >= 2) {
+        toast.error('Достигнут лимит в 2 магазина');
+        router.push('/dashboard');
+      } else {
+        setIsCheckingLimit(false);
+      }
+    }
+    checkLimit();
+  }, [router, supabase]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -41,16 +58,15 @@ export default function CreateShopPage() {
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session) { router.push('/login'); return; }
+      if (!session) return;
 
-      // Генерируем slug
       const slug = name.toLowerCase()
         .replace(/[^a-z0-9а-яё]/g, '-')
         .replace(/-+/g, '-')
         .replace(/^-|-$/g, '') 
         + '-' + Math.floor(Math.random() * 1000);
 
-      const { error } = await supabase.from('shops').insert({
+      const { data: newShop, error } = await supabase.from('shops').insert({
         profile_id: session.user.id,
         name,
         slug,
@@ -62,19 +78,28 @@ export default function CreateShopPage() {
         contact_telegram: telegram,
         contact_email: email,
         is_active: true
-      });
+      }).select().single();
 
       if (error) throw error;
 
+      // Устанавливаем новый магазин активным
+      localStorage.setItem('activeShopId', newShop.id);
+
+      toast.success('Магазин успешно создан!');
       router.push(redirectPath);
       router.refresh();
+      
     } catch (err) {
       console.error(err);
-      alert('Ошибка создания магазина');
+      toast.error('Ошибка создания магазина');
     } finally {
       setIsSubmitting(false);
     }
   };
+
+  if (isCheckingLimit) {
+    return <div className="min-h-screen flex items-center justify-center bg-gray-50"><Loader2 className="w-8 h-8 animate-spin text-blue-600" /></div>;
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4 py-12">

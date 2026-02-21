@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { 
-  LogOut, User, Plus, Menu, X, Store, LayoutDashboard 
+  LogOut, User, Plus, Menu, X, Store, LayoutDashboard, Settings
 } from 'lucide-react';
 
 export function Header() {
@@ -40,7 +40,7 @@ export function Header() {
     router.push('/login');
   };
 
-  // Не показываем хедер на странице входа/регистрации (опционально)
+  // Не показываем хедер на странице входа/регистрации
   if (pathname === '/login') return null;
 
   return (
@@ -81,19 +81,42 @@ export function Header() {
           ) : user ? (
             // ЕСЛИ АВТОРИЗОВАН
             <div className="flex items-center gap-3 pl-3 border-l border-gray-200">
-              <Link 
-                href="/dashboard" 
-                className="flex items-center gap-2 text-gray-700 hover:text-blue-600 font-medium transition-colors"
-                title="Личный кабинет"
-              >
-                <div className="w-9 h-9 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center border border-blue-100">
-                   <User className="w-5 h-5" />
+              
+              {/* Обертка для выпадающего меню (используем group для hover) */}
+              <div className="relative group">
+                <Link 
+                  href="/dashboard" 
+                  className="flex items-center gap-2 text-gray-700 hover:text-blue-600 font-medium transition-colors py-2"
+                  title="Личный кабинет"
+                >
+                  <div className="w-9 h-9 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center border border-blue-100">
+                     <User className="w-5 h-5" />
+                  </div>
+                  <span className="text-sm">Кабинет</span>
+                </Link>
+
+                {/* Выпадающее меню */}
+                <div className="absolute top-full right-0 pt-2 w-56 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
+                  <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-2 flex flex-col gap-1 relative overflow-hidden">
+                    <Link 
+                      href="/dashboard/profile" 
+                      className="px-3 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 hover:text-blue-600 rounded-xl transition-colors flex items-center gap-3"
+                    >
+                      <User className="w-4 h-4" /> Настроить профиль
+                    </Link>
+                    <Link 
+                      href="/dashboard" 
+                      className="px-3 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 hover:text-blue-600 rounded-xl transition-colors flex items-center gap-3"
+                    >
+                      <LayoutDashboard className="w-4 h-4" /> Настроить магазин
+                    </Link>
+                  </div>
                 </div>
-                <span className="text-sm">Кабинет</span>
-              </Link>
+              </div>
+
               <button 
                 onClick={handleLogout}
-                className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors ml-1"
                 title="Выйти"
               >
                 <LogOut className="w-5 h-5" />
@@ -134,16 +157,22 @@ export function Header() {
             <div className="h-px bg-gray-100 my-2" />
 
             {user ? (
-              <>
-                <Link href="/dashboard" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-2 text-gray-900 font-medium">
-                  <LayoutDashboard className="w-4 h-4" /> Личный кабинет
+              <div className="flex flex-col gap-1">
+                <Link href="/dashboard/profile" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-2 text-gray-900 font-medium p-2 hover:bg-gray-50 rounded-lg transition-colors">
+                  <User className="w-5 h-5 text-gray-500" /> Настроить профиль
                 </Link>
-                <button onClick={() => { handleLogout(); setIsMenuOpen(false); }} className="flex items-center gap-2 text-red-600 font-medium w-full text-left">
-                  <LogOut className="w-4 h-4" /> Выйти
+                <Link href="/dashboard" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-2 text-gray-900 font-medium p-2 hover:bg-gray-50 rounded-lg transition-colors">
+                  <LayoutDashboard className="w-5 h-5 text-gray-500" /> Настроить магазин
+                </Link>
+                
+                <div className="h-px bg-gray-100 my-2" />
+                
+                <button onClick={() => { handleLogout(); setIsMenuOpen(false); }} className="flex items-center gap-2 text-red-600 font-medium w-full text-left p-2 hover:bg-red-50 rounded-lg transition-colors">
+                  <LogOut className="w-5 h-5" /> Выйти
                 </button>
-              </>
+              </div>
             ) : (
-              <Link href="/login" onClick={() => setIsMenuOpen(false)} className="block w-full text-center py-2 bg-gray-900 text-white rounded-xl font-bold">
+              <Link href="/login" onClick={() => setIsMenuOpen(false)} className="block w-full text-center py-2.5 bg-gray-900 text-white rounded-xl font-bold">
                 Войти в аккаунт
               </Link>
             )}

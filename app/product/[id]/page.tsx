@@ -1,20 +1,67 @@
-'use client';
-
+// 1. УБИРАЕМ 'use client' из начала файла!
 import { createClient } from '@/lib/supabase/client';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { Metadata } from 'next'; // 2. Импортируем типы для метадаты
 import { 
   Clock, Heart, Share2, ShieldCheck, 
   Store, ArrowLeft, ChevronRight 
 } from 'lucide-react';
-import { ContactButtons } from '@/components/product/ContactButtons'; // Импортируем наш новый компонент
+import { ContactButtons } from '@/components/product/ContactButtons';
 
-// Функция для форматирования даты
 const formatDate = (dateString: string) => {
   return new Date(dateString).toLocaleDateString('ru-RU', {
     day: 'numeric', month: 'long', year: 'numeric'
   });
 };
+
+// 3. ДОБАВЛЯЕМ ГЕНЕРАЦИЮ ДИНАМИЧЕСКИХ МЕТАТЕГОВ
+export async function generateMetadata({ params }: { params: { id: string } }): Promise<Metadata> {
+  const supabase = createClient();
+
+  // Запрашиваем только те поля, которые нужны для SEO (для скорости)
+  const { data } = await supabase
+    .from('products')
+    .select('title, description, price, images, shop:shops(name)')
+    .eq('id', params.id)
+    .single();
+
+  // Приводим к any, чтобы TS не ругался на типы Supabase
+  const product = data as any;
+
+  if (!product) {
+    return { title: 'Товар не найден | LocalBoard' };
+  }
+
+  const imageUrl = product.images?.[0] || 'https://via.placeholder.com/600x400?text=No+Image';
+  const priceText = product.price ? `${product.price.toLocaleString('ru-RU')} ₽` : 'Цена не указана';
+  
+  // Безопасно достаем имя магазина (учитывая, что Supabase может вернуть как объект, так и массив)
+  const shopName = Array.isArray(product.shop) ? product.shop[0]?.name : product.shop?.name;
+
+  const seoDescription = product.description 
+    ? product.description.slice(0, 150) + '...' // Обрезаем длинное описание
+    : `Купить ${product.title} в магазине ${shopName || ''}`;
+
+  return {
+    title: `${product.title} за ${priceText} | LocalBoard`,
+    description: seoDescription,
+    openGraph: {
+      title: `${product.title} - ${priceText}`,
+      description: seoDescription,
+      images: [
+        {
+          url: imageUrl,
+          width: 800,
+          height: 600,
+          alt: product.title,
+        },
+      ],
+      locale: 'ru_RU',
+      type: 'website',
+    },
+  };
+}
 
 export default async function ProductPage({ params }: { params: { id: string } }) {
   const supabase = createClient();
